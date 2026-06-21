@@ -136,10 +136,14 @@ class MascotExprContext(
     private fun param(key: String): Double? =
         params[key]?.let { ShimejiExpr.eval(it, this) }
 
-    /** Border predicates (isOn) are resolved structurally by the runner, so here
-     *  they degrade to "false"; IE-related calls are never present in the Android
-     *  profile spec. */
-    override fun resolveCall(name: String, args: List<Double>): Double? = 0.0
+    /** Border predicates (floor/ceiling .isOn) resolved geometrically; window
+     *  ("activeIE") predicates are always false on Android. */
+    override fun resolveCall(name: String, args: List<Double>): Double? = when {
+        name.endsWith("floor.isOn") -> if (state.anchorAbsY >= env.workBottom - 4) 1.0 else 0.0
+        name.endsWith("ceiling.isOn") -> if (state.anchorAbsY <= env.workTop + 4) 1.0 else 0.0
+        name.contains("activeIE") -> 0.0
+        else -> 0.0
+    }
 }
 
 /**
@@ -157,12 +161,13 @@ class PrimitiveActionRunner(
     private val ctx = MascotExprContext(state, env, params)
     private var player: ClipPlayer = ClipPlayer(pickClip(), speed)
 
-    private var elapsedTicks = 0
-    private val durationTicks: Int = run {
-        val raw = ShimejiExpr.evalInt(params["Duration"], ctx, def.attrs["Duration"]?.toFloatOrNull()?.toInt() ?: 0)
-        // Stock durations (e.g. 500-1500) feel too long on a phone; shorten + cap
-        // so behaviors change more often.
-        if (raw <= 0) 0 else (raw * 0.5f).toInt().coerceIn(20, 220)
+    private var stayMs = 0f
+    private val durationMs: Float = run {
+        val p = ShimejiExpr.evalInt(params["Duration"], ctx, -1)
+        val ticks = if (p > 0) p else (def.attrs["Duration"]?.toFloatOrNull()?.toInt() ?: -1)
+        // Duration is in ~40ms units; shorten + cap for phone, and a no-duration
+        // Stay gets a short hold instead of standing forever.
+        if (ticks > 0) (ticks * 40f * 0.5f).coerceIn(300f, 4000f) else 800f
     }
 
     // our 16ms tick as a fraction of a Group-Finity ~40ms tick (keeps speed sane)
@@ -231,10 +236,9 @@ class PrimitiveActionRunner(
     // ---- per-type steppers ----
 
     private fun stepStay(): ActionStatus {
-        elapsedTicks++
+        stayMs += 16f
         keepOnBorder()
-        return if (durationTicks > 0 && elapsedTicks >= durationTicks) ActionStatus.DONE
-        else ActionStatus.RUNNING
+        return if (stayMs >= durationMs) ActionStatus.DONE else ActionStatus.RUNNING
     }
 
     private fun stepMove(): ActionStatus {
