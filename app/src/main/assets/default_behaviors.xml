@@ -32,10 +32,12 @@
         <Behavior Name="WalkAndGrabBottomRightWall" Frequency="20"/>
 
         <!-- ===== Wall ===== -->
-        <Behavior Name="HoldOntoWall" Frequency="50"/>
-        <Behavior Name="ClimbHalfwayAlongWall" Frequency="40"/>
-        <Behavior Name="ClimbAlongWall" Frequency="40"/>
-        <Behavior Name="FallFromWall" Frequency="30"/>
+        <Behavior Name="HoldOntoWall" Frequency="25"/>
+        <Behavior Name="ClimbHalfwayAlongWall" Frequency="55"/>
+        <Behavior Name="ClimbAlongWall" Frequency="55"/>
+        <Behavior Name="FallFromWall" Frequency="20"/>
+        <Behavior Name="JumpFromLeftWall" Frequency="30"/>
+        <Behavior Name="JumpFromRightWall" Frequency="30"/>
 
         <!-- ===== Ceiling ===== -->
         <Behavior Name="HoldOntoCeiling" Frequency="50"/>

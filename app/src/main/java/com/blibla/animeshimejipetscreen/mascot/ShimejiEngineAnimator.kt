@@ -194,8 +194,9 @@ class ShimejiEngineAnimator(
         thrown = true
         runner = null
         val dt = 16f / 1000f
-        throwVx = (vxPxPerSec * dt * 1.15f).coerceIn(-50f, 50f)
-        throwVy = (vyPxPerSec * dt * 1.05f).coerceIn(-70f, 70f)
+        // gentler throw: lower gain + tighter clamps so it doesn't whip across screen
+        throwVx = (vxPxPerSec * dt * 0.55f).coerceIn(-26f, 26f)
+        throwVy = (vyPxPerSec * dt * 0.55f).coerceIn(-34f, 34f)
         if (vxPxPerSec > 80f) state.lookRight = true
         else if (vxPxPerSec < -80f) state.lookRight = false
     }
@@ -264,7 +265,7 @@ class ShimejiEngineAnimator(
         state.x += throwVx
         state.y += throwVy
         throwVx *= airDrag
-        throwVy = (throwVy + gravityPerTick * 1.25f).coerceAtMost(maxFallSpeed + 12f)
+        throwVy = (throwVy + gravityPerTick).coerceAtMost(maxFallSpeed)
 
         val floorY = (h - state.height).toFloat()
         if (state.y >= floorY) {

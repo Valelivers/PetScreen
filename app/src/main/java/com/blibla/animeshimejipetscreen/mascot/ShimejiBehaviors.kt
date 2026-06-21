@@ -79,6 +79,13 @@ class BehaviorScheduler(
     /** Tolerance (px) for deciding the mascot is touching a border. */
     private val edge = 4
 
+    /** Behaviors whose start border can't be inferred from their first action
+     *  (they begin with an embedded Jump). Pin them to a contact state. */
+    private val contactOverride = mapOf(
+        "JumpFromLeftWall" to Contact.WALL,
+        "JumpFromRightWall" to Contact.WALL
+    )
+
     /** Pick the next behavior node for the given state, or null if none fits. */
     fun pickNext(state: MascotState, env: MascotEnv): BehaviorNode? {
         val contact = contactOf(state, env)
@@ -154,6 +161,7 @@ class BehaviorScheduler(
 
     /** Infer where a behavior starts from the border of its first concrete action. */
     private fun startContactOf(behaviorName: String): Contact {
+        contactOverride[behaviorName]?.let { return it }
         val node = spec.behaviors[behaviorName] ?: return Contact.FLOOR
         return when (firstActionBorder(node)) {
             BorderType.WALL -> Contact.WALL

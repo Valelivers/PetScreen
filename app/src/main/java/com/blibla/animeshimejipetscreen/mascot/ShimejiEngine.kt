@@ -67,15 +67,16 @@ enum class ActionStatus { RUNNING, DONE }
 class ClipPlayer(private val clip: AnimationClip, private val speed: Float = 1f) {
     private var index = 0
     private var accumMs = 0f
-    private val tickMs = 16f
+    private val frameUnitMs = 40f   // Group-Finity authors Duration in ~40ms ticks
+    private val realTickMs = 16f    // our render tick
 
     val currentPose: Pose get() = clip.poses[index.coerceIn(0, clip.poses.lastIndex)]
 
     /** @return true when the animation has played through at least once. */
     fun step(): Boolean {
         if (clip.poses.isEmpty()) return true
-        val durMs = (currentPose.durationTicks.coerceAtLeast(1) * tickMs) / speed.coerceAtLeast(0.1f)
-        accumMs += tickMs
+        val durMs = (currentPose.durationTicks.coerceAtLeast(1) * frameUnitMs) / speed.coerceAtLeast(0.1f)
+        accumMs += realTickMs
         var looped = false
         while (accumMs >= durMs) {
             accumMs -= durMs
@@ -157,8 +158,19 @@ class PrimitiveActionRunner(
     private var player: ClipPlayer = ClipPlayer(pickClip(), speed)
 
     private var elapsedTicks = 0
-    private val durationTicks: Int =
-        ShimejiExpr.evalInt(params["Duration"], ctx, def.attrs["Duration"]?.toFloatOrNull()?.toInt() ?: 0)
+    private val durationTicks: Int = run {
+        val raw = ShimejiExpr.evalInt(params["Duration"], ctx, def.attrs["Duration"]?.toFloatOrNull()?.toInt() ?: 0)
+        // Stock durations (e.g. 500-1500) feel too long on a phone; shorten + cap
+        // so behaviors change more often.
+        if (raw <= 0) 0 else (raw * 0.5f).toInt().coerceIn(20, 220)
+    }
+
+    // our 16ms tick as a fraction of a Group-Finity ~40ms tick (keeps speed sane)
+    private val moveFactor = 16f / 40f
+    private var moveTicks = 0
+    private val moveMaxTicks = 500          // failsafe: a Move can never run forever
+    private var moveDirX = 0f
+    private var moveDirY = -1f
 
     // resolved navigation targets (absolute px)
     private val targetX: Float? = params["TargetX"]?.let { ShimejiExpr.eval(it, ctx).toFloat() }
@@ -170,9 +182,26 @@ class PrimitiveActionRunner(
     private val resistY = (def.attrs["RegistanceY"] ?: def.attrs["ResistanceY"])?.toFloatOrNull() ?: 0.1f
 
     init {
-        // Move actions decide facing from where the target is.
-        if (def.type == ActionType.MOVE && targetX != null && def.borderType != BorderType.WALL) {
-            state.lookRight = targetX > state.anchorAbsX
+        // Move actions decide facing/direction from where the target is.
+        if (def.type == ActionType.MOVE) {
+            when (def.borderType) {
+                BorderType.WALL -> {
+                    moveDirY = when {
+                        targetY != null && targetY < state.anchorAbsY -> -1f
+                        targetY != null -> 1f
+                        else -> -1f
+                    }
+                }
+                else -> {
+                    moveDirX = when {
+                        targetX != null && targetX > state.anchorAbsX -> 1f
+                        targetX != null -> -1f
+                        state.lookRight -> 1f
+                        else -> -1f
+                    }
+                    state.lookRight = moveDirX > 0
+                }
+            }
         }
         // Embedded one-shots that change facing/position immediately.
         when (def.embeddedClass?.substringAfterLast('.')) {
@@ -210,27 +239,37 @@ class PrimitiveActionRunner(
 
     private fun stepMove(): ActionStatus {
         val pose = currentPose
+        moveTicks++
+        if (moveTicks > moveMaxTicks) return ActionStatus.DONE
+        val k = scale * moveFactor * speed
+
         return when (def.borderType) {
             BorderType.WALL -> {
-                val dir = if ((targetY ?: state.anchorAbsY) < state.anchorAbsY) -1f else 1f
-                state.y += abs(pose.vy) * scale * dir
+                state.y += abs(pose.vy) * k * moveDirY
                 stickToWall()
-                if (targetY != null && abs(state.anchorAbsY - targetY) < 4f) ActionStatus.DONE
-                else ActionStatus.RUNNING
+                val reached = targetY != null &&
+                    ((moveDirY < 0 && state.anchorAbsY <= targetY) ||
+                        (moveDirY > 0 && state.anchorAbsY >= targetY))
+                val hitEnd = state.y <= env.workTop || state.y + state.height >= env.workBottom
+                if (reached || hitEnd) ActionStatus.DONE else ActionStatus.RUNNING
             }
             BorderType.CEILING -> {
-                val dir = if (state.lookRight) 1f else -1f
-                state.x += abs(pose.vx) * scale * dir
-                state.y = (env.workTop).toFloat()
-                if (targetX != null && abs(state.anchorAbsX - targetX) < 4f) ActionStatus.DONE
-                else ActionStatus.RUNNING
+                state.x += abs(pose.vx) * k * moveDirX
+                state.y = env.workTop.toFloat()
+                val reached = targetX != null &&
+                    ((moveDirX > 0 && state.anchorAbsX >= targetX) ||
+                        (moveDirX < 0 && state.anchorAbsX <= targetX))
+                val hitEnd = state.x <= env.workLeft || state.x + state.width >= env.workRight
+                if (reached || hitEnd) ActionStatus.DONE else ActionStatus.RUNNING
             }
             else -> { // FLOOR
-                val dir = if (state.lookRight) 1f else -1f
-                state.x += abs(pose.vx) * scale * dir
+                state.x += abs(pose.vx) * k * moveDirX
                 state.y = (env.workBottom - state.height).toFloat()
-                if (targetX != null && abs(state.anchorAbsX - targetX) < 4f) ActionStatus.DONE
-                else ActionStatus.RUNNING
+                val reached = targetX != null &&
+                    ((moveDirX > 0 && state.anchorAbsX >= targetX) ||
+                        (moveDirX < 0 && state.anchorAbsX <= targetX))
+                val hitEnd = state.x <= env.workLeft || state.x + state.width >= env.workRight
+                if (reached || hitEnd) ActionStatus.DONE else ActionStatus.RUNNING
             }
         }
     }
