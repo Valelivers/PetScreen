@@ -349,9 +349,12 @@ class PrimitiveActionRunner(
     }
 
     private fun stickToWall() {
-        // keep the side we're already nearest to
-        val nearLeft = state.anchorAbsX <= env.workLeft + (env.workWidth / 2)
-        state.x = if (nearLeft) (env.workLeft - state.anchorX) else (env.workRight - state.anchorX)
+        // snap the sprite flush against the nearest wall (sprite-edge based, so the
+        // contact test below actually recognises it as "on a wall")
+        val center = state.x + state.width / 2f
+        val mid = (env.workLeft + env.workRight) / 2f
+        state.x = if (center < mid) env.workLeft.toFloat()
+        else (env.workRight - state.width).toFloat()
     }
 
     /** Choose the animation clip whose condition currently holds. */

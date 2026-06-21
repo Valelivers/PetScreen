@@ -144,12 +144,12 @@ class BehaviorScheduler(
         return pool.last().name
     }
 
-    /** Geometric contact test (no expression predicates needed). */
+    /** Geometric contact test (sprite-edge based, no expression predicates). */
     private fun contactOf(state: MascotState, env: MascotEnv): Contact {
-        val onFloor = state.anchorAbsY >= env.workBottom - edge
-        val onCeiling = state.anchorAbsY <= env.workTop + edge
-        val onLeft = state.anchorAbsX <= env.workLeft + edge
-        val onRight = state.anchorAbsX >= env.workRight - edge
+        val onFloor = state.y + state.height >= env.workBottom - edge
+        val onCeiling = state.y <= env.workTop + edge
+        val onLeft = state.x <= env.workLeft + edge
+        val onRight = state.x + state.width >= env.workRight - edge
 
         return when {
             onFloor -> Contact.FLOOR
