@@ -79,6 +79,10 @@ class ShimejiAnimator(
 
     private var tickCounter: Long = 0
 
+    // accumulates real elapsed time so sprite-frame advance is decoupled from the
+    // fixed physics tick (keeps motion smooth at ~60fps regardless of frame duration)
+    private var frameAccumMs: Float = 0f
+
     // drag target (service sets this)
     @Volatile private var dragTargetX: Int? = null
     @Volatile private var dragTargetY: Int? = null
@@ -380,6 +384,7 @@ class ShimejiAnimator(
 
         currentAction = action
         currentActionName = actionName
+        frameAccumMs = 0f
 
         if (forceRestart) actionFrame[actionName] = 0
         if (actionFrame[actionName] == null) actionFrame[actionName] = 0
@@ -428,6 +433,8 @@ class ShimejiAnimator(
 
     private suspend fun mainLoop() {
         while (coroutineContext.isActive) {
+
+            val frameStartMs = SystemClock.uptimeMillis()
 
             // ===== sanity: current action & pose =====
             val a0 = currentAction ?: break
@@ -542,10 +549,13 @@ class ShimejiAnimator(
                                     val ax = poseAnchorX(pose)
                                     xf = if (facingRight) -ax + offset else sw - ax - offset
 
+                                    val frameDurMs = ((pose.durationTicks.coerceAtLeast(1) * tickMs).toFloat() / speedMultiplier)
+                                        .coerceAtLeast(8f)
+                                    val stepScale = (tickMs.toFloat() / frameDurMs).coerceIn(0.05f, 1f)
                                     val vyAbs = max(2.0f, abs(pose.vy))
-                                    yf += if (wallDirUp) -vyAbs else vyAbs
+                                    yf += (if (wallDirUp) -vyAbs else vyAbs) * stepScale
 
-                                    if (chance(6)) yf += min(2.5f, wallSlideMax)
+                                    if (chance(6)) yf += min(2.5f, wallSlideMax) * stepScale
 
                                     nextDecisionAtMs = now + 999_999
                                 } else {
@@ -560,17 +570,27 @@ class ShimejiAnimator(
                     }
 
                     State.CEILING -> {
+                        val frameDurMs = ((pose.durationTicks.coerceAtLeast(1) * tickMs).toFloat() / speedMultiplier)
+                            .coerceAtLeast(8f)
+                        val stepScale = (tickMs.toFloat() / frameDurMs).coerceIn(0.05f, 1f)
                         yf = 0f
-                        xf += pose.vx
+                        xf += pose.vx * stepScale
                     }
 
                     State.MOVE, State.IDLE, State.RECOVER -> {
-                        xf += pose.vx
-                        yf += pose.vy
+                        // Movement is authored "per sprite-frame". Spread it across the
+                        // sub-ticks that make up that frame so the position advances a
+                        // little every 16ms tick instead of jumping once per frame.
+                        val frameDurMs = ((pose.durationTicks.coerceAtLeast(1) * tickMs).toFloat() / speedMultiplier)
+                            .coerceAtLeast(8f)
+                        val stepScale = (tickMs.toFloat() / frameDurMs).coerceIn(0.05f, 1f)
+
+                        xf += pose.vx * stepScale
+                        yf += pose.vy * stepScale
 
                         if (state == State.MOVE) {
                             val dir = if (facingRight) 1f else -1f
-                            if (abs(pose.vx) < 0.01f) xf += (vxExtra * dir)
+                            if (abs(pose.vx) < 0.01f) xf += (vxExtra * dir) * stepScale
                         } else {
                             vxExtra *= groundFriction
                             if (abs(vxExtra) < 0.05f) vxExtra = 0f
@@ -775,22 +795,24 @@ class ShimejiAnimator(
                 decideNextAction(now, onFloor, onTop, hitWallNow)
             }
 
-            // ===== delay =====
-            val baseDelayMs = ((pose.durationTicks.coerceAtLeast(1) * tickMs) / speedMultiplier)
-                .toLong()
-                .coerceAtLeast(8L)
+            // ===== frame pacing: fixed physics tick, decoupled sprite frame =====
+            // Position/physics already updated above for THIS 16ms tick. Here we only
+            // decide when to advance the *sprite* frame, based on how much real time
+            // has accumulated relative to the current pose's authored duration.
+            val frameDurMs = ((pose.durationTicks.coerceAtLeast(1) * tickMs).toFloat() / speedMultiplier)
+                .coerceAtLeast(8f)
 
-            val delayMs = when {
-                state == State.WALL && currentActionName == "ClimbWall" -> baseDelayMs.coerceIn(16L, 60L)
-                state == State.AIR || state == State.THROWN || currentActionName == "Falling" -> 16L
-                else -> baseDelayMs
+            frameAccumMs += tickMs
+            while (frameAccumMs >= frameDurMs) {
+                frameAccumMs -= frameDurMs
+                actionFrame[currentActionName] = (actionFrame[currentActionName] ?: 0) + 1
             }
-
-            delay(delayMs)
-
-            // advance frame
-            actionFrame[currentActionName] = (actionFrame[currentActionName] ?: 0) + 1
             tickCounter++
+
+            // Keep a steady ~60fps cadence: subtract the time already spent doing work
+            // this tick (decode, layout update) so frames don't drift / stutter.
+            val workMs = SystemClock.uptimeMillis() - frameStartMs
+            delay((tickMs - workMs).coerceIn(1L, tickMs))
         }
     }
 
