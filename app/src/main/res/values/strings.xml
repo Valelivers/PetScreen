@@ -1,0 +1,38 @@
+<resources>
+    <string name="app_name">Anime Shimeji Pet Screen</string>
+
+    <!-- Ads -->
+    <string name="admob_app_id">ca-app-pub-4700641054038167~8593831880</string>
+
+    <!-- Screen -->
+    <string name="detail_title">Detail</string>
+    <string name="back">Back</string>
+
+    <!-- Section -->
+    <string name="assets_title">Assets</string>
+
+    <!-- Info text -->
+    <string name="shimeji_id_status">ID: %1$d • %2$s</string>
+    <string name="zip_updated_at">ZIP updated: %1$s</string>
+    <string name="zip_size_bytes">ZIP size: %1$d bytes</string>
+
+    <!-- Download -->
+    <string name="downloading_progress">Downloading... %1$d%%</string>
+
+    <!-- Buttons -->
+    <string name="btn_downloading">Downloading...</string>
+    <string name="btn_update">Update</string>
+    <string name="btn_use">Use</string>
+    <string name="btn_download">Download</string>
+    <string name="btn_update_assets">Update assets</string>
+
+    <!-- Overlay permission dialog -->
+    <string name="overlay_permission_title">Overlay Permission Required</string>
+    <string name="overlay_permission_message">
+    To display Shimeji on top of other apps, this application requires the "Display over other apps" (Overlay) permission.
+    After pressing Agree, you will be redirected to the permission settings.
+    </string>
+    <string name="overlay_permission_agree">Agree</string>
+    <string name="overlay_permission_cancel">Cancel</string>
+
+</resources>
