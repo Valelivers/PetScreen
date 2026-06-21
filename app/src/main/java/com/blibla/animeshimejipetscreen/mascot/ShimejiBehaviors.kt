@@ -104,10 +104,23 @@ class BehaviorScheduler(
     fun nextRunner(
         state: MascotState,
         envProvider: () -> MascotEnv,
-        speed: () -> Float = { 1f }
+        speed: () -> Float = { 1f },
+        scale: () -> Float = { 1f }
     ): BehaviorRunner? {
         val node = pickNext(state, envProvider()) ?: return null
-        return BehaviorRunner(spec, node, state, envProvider, speed)
+        return BehaviorRunner(spec, node, state, envProvider, speed, scale)
+    }
+
+    /** Build a runner for a specific named behavior (event-driven: Fall/Dragged/Thrown). */
+    fun runnerFor(
+        name: String,
+        state: MascotState,
+        envProvider: () -> MascotEnv,
+        speed: () -> Float = { 1f },
+        scale: () -> Float = { 1f }
+    ): BehaviorRunner? {
+        val node = spec.behaviors[name] ?: return null
+        return BehaviorRunner(spec, node, state, envProvider, speed, scale)
     }
 
     // ---- helpers ----

@@ -150,7 +150,8 @@ class PrimitiveActionRunner(
     private val params: Map<String, String>,
     private val state: MascotState,
     private val env: MascotEnv,
-    private val speed: Float = 1f
+    private val speed: Float = 1f,
+    private val scale: Float = 1f
 ) {
     private val ctx = MascotExprContext(state, env, params)
     private var player: ClipPlayer = ClipPlayer(pickClip(), speed)
@@ -186,8 +187,8 @@ class PrimitiveActionRunner(
 
     fun step(): ActionStatus {
         val looped = player.step()
-        state.anchorX = currentPose.anchorX.toFloat()
-        state.anchorY = currentPose.anchorY.toFloat()
+        state.anchorX = currentPose.anchorX.toFloat() * scale
+        state.anchorY = currentPose.anchorY.toFloat() * scale
 
         return when (def.type) {
             ActionType.STAY -> stepStay()
@@ -212,21 +213,21 @@ class PrimitiveActionRunner(
         return when (def.borderType) {
             BorderType.WALL -> {
                 val dir = if ((targetY ?: state.anchorAbsY) < state.anchorAbsY) -1f else 1f
-                state.y += abs(pose.vy) * dir
+                state.y += abs(pose.vy) * scale * dir
                 stickToWall()
                 if (targetY != null && abs(state.anchorAbsY - targetY) < 4f) ActionStatus.DONE
                 else ActionStatus.RUNNING
             }
             BorderType.CEILING -> {
                 val dir = if (state.lookRight) 1f else -1f
-                state.x += abs(pose.vx) * dir
+                state.x += abs(pose.vx) * scale * dir
                 state.y = (env.workTop).toFloat()
                 if (targetX != null && abs(state.anchorAbsX - targetX) < 4f) ActionStatus.DONE
                 else ActionStatus.RUNNING
             }
             else -> { // FLOOR
                 val dir = if (state.lookRight) 1f else -1f
-                state.x += abs(pose.vx) * dir
+                state.x += abs(pose.vx) * scale * dir
                 state.y = (env.workBottom - state.height).toFloat()
                 if (targetX != null && abs(state.anchorAbsX - targetX) < 4f) ActionStatus.DONE
                 else ActionStatus.RUNNING
@@ -289,8 +290,8 @@ class PrimitiveActionRunner(
     }
 
     private fun applyOffset() {
-        params["X"]?.let { state.x += ShimejiExpr.eval(it, ctx).toFloat() }
-        params["Y"]?.let { state.y += ShimejiExpr.eval(it, ctx).toFloat() }
+        params["X"]?.let { state.x += ShimejiExpr.eval(it, ctx).toFloat() * scale }
+        params["Y"]?.let { state.y += ShimejiExpr.eval(it, ctx).toFloat() * scale }
     }
 
     // ---- border helpers ----
@@ -328,14 +329,19 @@ class BehaviorRunner(
     private val root: BehaviorNode,
     private val state: MascotState,
     private val envProvider: () -> MascotEnv,
-    private val speed: () -> Float = { 1f }
+    private val speed: () -> Float = { 1f },
+    private val scale: () -> Float = { 1f }
 ) {
     // flattened leaf actions to execute in order (resolved lazily for SELECT)
     private val frame = ArrayDeque<Step>()
     private var current: PrimitiveActionRunner? = null
     private var finished = false
 
-    private data class Step(val refName: String, val params: Map<String, String>)
+    private data class Step(
+        val refName: String,
+        val params: Map<String, String>,
+        val node: BehaviorNode? = null
+    )
 
     init { enqueueNode(root) }
 
@@ -361,9 +367,13 @@ class BehaviorRunner(
     private fun advanceToNextPrimitive(): Boolean {
         while (frame.isNotEmpty()) {
             val step = frame.removeFirst()
+            if (step.node != null) {                 // anonymous nested Sequence/Select
+                expandNodeFront(step.node, step.params)
+                continue
+            }
             val def = spec.actions[step.refName]
             if (def != null) {
-                current = PrimitiveActionRunner(def, step.params, state, envProvider(), speed())
+                current = PrimitiveActionRunner(def, step.params, state, envProvider(), speed(), scale())
                 return true
             }
             // a referenced behavior (composed) -> expand inline
@@ -398,7 +408,7 @@ class BehaviorRunner(
         children.asReversed().forEach { child ->
             when (child) {
                 is RefChild -> frame.addFirst(Step(child.ref.name, child.ref.params))
-                is NodeChild -> frame.addFirst(Step(child.node.name ?: "", emptyMap()))
+                is NodeChild -> frame.addFirst(Step("", emptyMap(), child.node))
             }
         }
     }
@@ -406,7 +416,7 @@ class BehaviorRunner(
     private fun addChild(child: SpecChild, end: Boolean) {
         val step = when (child) {
             is RefChild -> Step(child.ref.name, child.ref.params)
-            is NodeChild -> Step(child.node.name ?: "", emptyMap())
+            is NodeChild -> Step("", emptyMap(), child.node)
         }
         if (end) frame.addLast(step) else frame.addFirst(step)
     }

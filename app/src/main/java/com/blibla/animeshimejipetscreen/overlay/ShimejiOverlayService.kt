@@ -19,8 +19,11 @@ import com.blibla.animeshimejipetscreen.R
 import com.blibla.animeshimejipetscreen.data.local.DbProvider
 import com.blibla.animeshimejipetscreen.data.local.entity.ActiveShimejiEntity
 import com.blibla.animeshimejipetscreen.data.prefs.UserPrefs
-import com.blibla.animeshimejipetscreen.mascot.ActionsParser
-import com.blibla.animeshimejipetscreen.mascot.ShimejiAnimator
+import com.blibla.animeshimejipetscreen.mascot.ShimejiEngineAnimator
+import com.blibla.animeshimejipetscreen.mascot.ShimejiSpec
+import com.blibla.animeshimejipetscreen.mascot.ShimejiSpecParser
+import com.blibla.animeshimejipetscreen.mascot.BehaviorsParser
+import com.blibla.animeshimejipetscreen.mascot.forAndroid
 import java.io.File
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
@@ -60,7 +63,7 @@ class ShimejiOverlayService : Service() {
         val id: Long,
         val view: ImageView,
         val params: WindowManager.LayoutParams,
-        val animator: ShimejiAnimator,
+        val animator: ShimejiEngineAnimator,
         val settingsJob: Job,
         val drag: DragState = DragState(),
         var attached: Boolean = true
@@ -198,7 +201,7 @@ class ShimejiOverlayService : Service() {
         }
     }
 
-    private fun startSettingsRealtimeFor(anim: ShimejiAnimator): Job {
+    private fun startSettingsRealtimeFor(anim: ShimejiEngineAnimator): Job {
         val prefs = UserPrefs(this)
         return serviceScope.launch {
             launch { prefs.animScale.collectLatest { anim.setScale(it) } }
@@ -349,12 +352,13 @@ class ShimejiOverlayService : Service() {
                 id = id,
                 view = iv,
                 params = params,
-                animator = ShimejiAnimator(
+                animator = ShimejiEngineAnimator(
                     imageView = iv,
                     windowManager = windowManager,
                     layoutParams = params,
                     extractedDir = extractedDir,
-                    actions = emptyMap()
+                    spec = ShimejiSpec(emptyMap(), emptyMap()),
+                    behaviorEntries = emptyList()
                 ),
                 settingsJob = Job().apply { cancel() }, // no-op
                 attached = shouldAttachNow
@@ -363,24 +367,33 @@ class ShimejiOverlayService : Service() {
             return
         }
 
-        val actions = ActionsParser.parsePrimitiveActions(actionsFile)
+        val spec = ShimejiSpecParser.parse(actionsFile).forAndroid()
 
-        val startAction = when {
-            actions.containsKey("Stand") -> "Stand"
-            actions.isNotEmpty() -> actions.keys.first()
-            else -> null
-        } ?: run {
-            // actions kosong -> remove view biar tidak nyangkut
+        if (spec.actions.isEmpty()) {
+            // no usable actions -> remove view biar tidak nyangkut
             try { windowManager.removeView(iv) } catch (_: Exception) {}
             return
         }
 
-        val animator = ShimejiAnimator(
+        // behaviors.xml dari pack kalau ada, kalau tidak pakai default bawaan app
+        val behaviorsFile = File(extractedDir, "behaviors.xml")
+        val behaviorEntries = try {
+            if (behaviorsFile.exists()) {
+                BehaviorsParser.parse(behaviorsFile)
+            } else {
+                assets.open("default_behaviors.xml").use { BehaviorsParser.parse(it) }
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+
+        val animator = ShimejiEngineAnimator(
             imageView = iv,
             windowManager = windowManager,
             layoutParams = params,
             extractedDir = extractedDir,
-            actions = actions
+            spec = spec,
+            behaviorEntries = behaviorEntries
         )
 
         val settingsJob = startSettingsRealtimeFor(animator)
@@ -394,7 +407,7 @@ class ShimejiOverlayService : Service() {
             attached = shouldAttachNow
         )
 
-        animator.start(startAction)
+        animator.start()
 
         if (isScreenHidden) animator.pause()
 
