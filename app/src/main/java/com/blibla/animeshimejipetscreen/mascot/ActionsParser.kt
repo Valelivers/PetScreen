@@ -56,8 +56,15 @@ object ActionsParser {
                             val vel = parser.getAttributeValue(null, "Velocity") ?: "0,0"
                             val dur = parser.getAttributeValue(null, "Duration") ?: "1"
 
-                            val (ax, ay) = anchor.split(",").map { it.trim().toInt() }
-                            val (vx, vy) = vel.split(",").map { it.trim().toFloat() }
+                            // tolerant parsing: accept decimals / spaces / missing parts
+                            // instead of crashing on toInt() (e.g. ImageAnchor="64,104.0")
+                            val anchorParts = anchor.split(",")
+                            val ax = anchorParts.getOrNull(0)?.trim()?.toFloatOrNull()?.toInt() ?: 0
+                            val ay = anchorParts.getOrNull(1)?.trim()?.toFloatOrNull()?.toInt() ?: 0
+
+                            val velParts = vel.split(",")
+                            val vx = velParts.getOrNull(0)?.trim()?.toFloatOrNull() ?: 0f
+                            val vy = velParts.getOrNull(1)?.trim()?.toFloatOrNull() ?: 0f
 
                             poses += Pose(
                                 image = img,
@@ -65,7 +72,7 @@ object ActionsParser {
                                 anchorY = ay,
                                 vx = vx,
                                 vy = vy,
-                                durationTicks = dur.toInt()
+                                durationTicks = (dur.trim().toFloatOrNull()?.toInt() ?: 1).coerceAtLeast(1)
                             )
                         }
                     }
