@@ -277,7 +277,9 @@ class ShimejiOverlayService : Service() {
                         val nx = initialX + (event.rawX - touchX).toInt()
                         val ny = initialY + (event.rawY - touchY).toInt()
 
-                        animator.setDragTarget(nx, ny)
+                        // follow the finger immediately (touch-rate), not just on the
+                        // next animation tick, for a smooth 1:1 drag
+                        animator.dragTo(nx, ny)
 
                         drag.prevTargetX = lastMoveX
                         drag.prevTargetY = lastMoveY

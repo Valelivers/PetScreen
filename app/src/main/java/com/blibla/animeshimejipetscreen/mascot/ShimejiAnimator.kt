@@ -226,7 +226,15 @@ class ShimejiAnimator(
             throwVx = 0f
             throwVy = 0f
 
-            if (actions.containsKey("Pinched")) playAction("Pinched", forceRestart = true)
+            if (actions.containsKey("Pinched")) {
+                playAction("Pinched", forceRestart = true)
+                // Hold a single, centered drag pose. The 7 Pinched poses are lean
+                // variants; cycling through them while dragging makes the sprite
+                // flicker, so freeze on the middle (upright) one.
+                actions["Pinched"]?.poses?.let { p ->
+                    if (p.isNotEmpty()) actionFrame["Pinched"] = p.size / 2
+                }
+            }
             nextDecisionAtMs = SystemClock.uptimeMillis() + 999_999
         } else {
             dragTargetX = null
@@ -252,6 +260,35 @@ class ShimejiAnimator(
     fun setDragTarget(nx: Int, ny: Int) {
         dragTargetX = nx
         dragTargetY = ny
+    }
+
+    /**
+     * Move immediately to the drag point and push it to the window on the spot,
+     * so dragging tracks the finger at touch-event rate (e.g. 90/120Hz) instead of
+     * waiting for the next ~16ms animation tick. Clamps to screen bounds.
+     */
+    fun dragTo(nx: Int, ny: Int) {
+        val sw = screenW()
+        val sh = screenH()
+        val w = max(1, layoutParams.width.takeIf { it > 0 } ?: viewW())
+        val h = max(1, layoutParams.height.takeIf { it > 0 } ?: viewH())
+
+        val cx = nx.coerceIn(0, max(0, sw - w))
+        val cy = ny.coerceIn(0, max(0, sh - h))
+
+        dragTargetX = cx
+        dragTargetY = cy
+        x = cx
+        y = cy
+        xf = cx.toFloat()
+        yf = cy.toFloat()
+        layoutParams.x = cx
+        layoutParams.y = cy
+
+        try {
+            windowManager.updateViewLayout(imageView, layoutParams)
+        } catch (_: Throwable) {
+        }
     }
 
     fun setPosition(nx: Int, ny: Int) {
@@ -459,11 +496,10 @@ class ShimejiAnimator(
 
             // ===== dragged follow =====
             if (grabbed) {
-                val tx = (dragTargetX ?: x).toFloat()
-                val ty = (dragTargetY ?: y).toFloat()
-
-                xf += (tx - xf) * 0.72f
-                yf += (ty - yf) * 0.72f
+                // Follow the finger directly (no easing) so the mascot sticks to the
+                // touch point instead of trailing behind it with a springy lag.
+                xf = (dragTargetX ?: x).toFloat()
+                yf = (dragTargetY ?: y).toFloat()
 
                 vyExtra = 0f
                 vxExtra = 0f
@@ -803,9 +839,13 @@ class ShimejiAnimator(
                 .coerceAtLeast(8f)
 
             frameAccumMs += tickMs
-            while (frameAccumMs >= frameDurMs) {
-                frameAccumMs -= frameDurMs
-                actionFrame[currentActionName] = (actionFrame[currentActionName] ?: 0) + 1
+            // Don't advance the sprite frame while dragging: the drag pose is held
+            // steady (set in setGrabbed) so it doesn't flicker through lean variants.
+            if (!grabbed) {
+                while (frameAccumMs >= frameDurMs) {
+                    frameAccumMs -= frameDurMs
+                    actionFrame[currentActionName] = (actionFrame[currentActionName] ?: 0) + 1
+                }
             }
             tickCounter++
 
