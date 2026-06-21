@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Default behavior frequency table (Android profile).
+
+  Used as a fallback when a shimeji pack does not bundle its own behaviors.xml.
+  Only behaviors that make sense on a phone are listed: everything tied to a
+  desktop window ("IE") and anything that needs a hover mouse cursor
+  (ChaseMouse / SitAndFaceMouse) is intentionally omitted.
+
+  Frequency = relative weight for weighted-random selection within the mascot's
+  current contact state (floor / wall / ceiling). Hidden behaviors are never
+  picked randomly; they are triggered by events (fall, drag, throw).
+-->
+<Mascot>
+    <BehaviorList>
+        <!-- ===== Floor ===== -->
+        <Behavior Name="WalkAlongWorkAreaFloor" Frequency="100"/>
+        <Behavior Name="RunAlongWorkAreaFloor" Frequency="40"/>
+        <Behavior Name="CrawlAlongWorkAreaFloor" Frequency="30"/>
+        <Behavior Name="StandUp" Frequency="60"/>
+        <Behavior Name="SitDown" Frequency="50"/>
+        <Behavior Name="LieDown" Frequency="20"/>
+        <Behavior Name="SitWhileDanglingLegs" Frequency="20"/>
+        <Behavior Name="SitAndSpinHead" Frequency="10"/>
+        <Behavior Name="WalkLeftAlongFloorAndSit" Frequency="20"/>
+        <Behavior Name="WalkRightAlongFloorAndSit" Frequency="20"/>
+        <Behavior Name="WalkLeftAndSit" Frequency="15"/>
+        <Behavior Name="WalkRightAndSit" Frequency="15"/>
+        <Behavior Name="GrabWorkAreaBottomLeftWall" Frequency="30"/>
+        <Behavior Name="GrabWorkAreaBottomRightWall" Frequency="30"/>
+        <Behavior Name="WalkAndGrabBottomLeftWall" Frequency="20"/>
+        <Behavior Name="WalkAndGrabBottomRightWall" Frequency="20"/>
+
+        <!-- ===== Wall ===== -->
+        <Behavior Name="HoldOntoWall" Frequency="50"/>
+        <Behavior Name="ClimbHalfwayAlongWall" Frequency="40"/>
+        <Behavior Name="ClimbAlongWall" Frequency="40"/>
+        <Behavior Name="FallFromWall" Frequency="30"/>
+
+        <!-- ===== Ceiling ===== -->
+        <Behavior Name="HoldOntoCeiling" Frequency="50"/>
+        <Behavior Name="ClimbAlongCeiling" Frequency="40"/>
+        <Behavior Name="FallFromCeiling" Frequency="40"/>
+
+        <!-- ===== Event-driven (never random) ===== -->
+        <Behavior Name="Fall" Frequency="0" Hidden="true"/>
+        <Behavior Name="Dragged" Frequency="0" Hidden="true"/>
+        <Behavior Name="Thrown" Frequency="0" Hidden="true"/>
+    </BehaviorList>
+</Mascot>
