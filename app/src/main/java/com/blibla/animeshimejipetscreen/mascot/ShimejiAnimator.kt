@@ -83,6 +83,15 @@ class ShimejiAnimator(
     // fixed physics tick (keeps motion smooth at ~60fps regardless of frame duration)
     private var frameAccumMs: Float = 0f
 
+    // render dedup: don't re-push an identical bitmap/size/layout every tick
+    // (re-laying out the overlay window each frame is a real source of jank)
+    private var lastRenderedImage: String? = null
+    private var lastRenderedScale: Float = -1f
+    private var lastAppliedX: Int = Int.MIN_VALUE
+    private var lastAppliedY: Int = Int.MIN_VALUE
+    private var lastAppliedW: Int = Int.MIN_VALUE
+    private var lastAppliedH: Int = Int.MIN_VALUE
+
     // drag target (service sets this)
     @Volatile private var dragTargetX: Int? = null
     @Volatile private var dragTargetY: Int? = null
@@ -177,6 +186,7 @@ class ShimejiAnimator(
         yf = y.toFloat()
 
         tickCounter = 0
+        forceNextRender()
         loopJob = scope.launch { mainLoop() }
     }
 
@@ -202,8 +212,19 @@ class ShimejiAnimator(
 
         // start loop lagi tanpa reset state/physics
         if (loopJob == null) {
+            forceNextRender()
             loopJob = scope.launch { mainLoop() }
         }
+    }
+
+    /** Invalidate render dedup so the next loop tick re-pushes bitmap + layout. */
+    private fun forceNextRender() {
+        lastRenderedImage = null
+        lastRenderedScale = -1f
+        lastAppliedX = Int.MIN_VALUE
+        lastAppliedY = Int.MIN_VALUE
+        lastAppliedW = Int.MIN_VALUE
+        lastAppliedH = Int.MIN_VALUE
     }
 
     fun setScale(multiplier: Float) {
@@ -287,6 +308,10 @@ class ShimejiAnimator(
 
         try {
             windowManager.updateViewLayout(imageView, layoutParams)
+            lastAppliedX = cx
+            lastAppliedY = cy
+            lastAppliedW = layoutParams.width
+            lastAppliedH = layoutParams.height
         } catch (_: Throwable) {
         }
     }
@@ -654,9 +679,14 @@ class ShimejiAnimator(
             // ===== render =====
             val bmp = loadBitmapCached(pose.image)
             if (bmp != null) {
-                imageView.setImageBitmap(bmp)
-                layoutParams.width = (bmp.width * scaleMultiplier).toInt().coerceAtLeast(1)
-                layoutParams.height = (bmp.height * scaleMultiplier).toInt().coerceAtLeast(1)
+                // only swap the bitmap + recompute size when the image or scale changed
+                if (pose.image != lastRenderedImage || scaleMultiplier != lastRenderedScale) {
+                    imageView.setImageBitmap(bmp)
+                    layoutParams.width = (bmp.width * scaleMultiplier).toInt().coerceAtLeast(1)
+                    layoutParams.height = (bmp.height * scaleMultiplier).toInt().coerceAtLeast(1)
+                    lastRenderedImage = pose.image
+                    lastRenderedScale = scaleMultiplier
+                }
                 imageView.scaleX = if (facingRight) 1f else -1f
                 imageView.scaleY = 1f
             }
@@ -664,11 +694,20 @@ class ShimejiAnimator(
             // ===== clamp after size known =====
             mainLoopClampAndApply(sw, sh, pose)
 
-            try {
-                windowManager.updateViewLayout(imageView, layoutParams)
-            } catch (t: Throwable) {
-                Log.e("SHIMEJI", "updateViewLayout failed", t)
-                break
+            // only touch the window when something actually moved/resized
+            if (x != lastAppliedX || y != lastAppliedY ||
+                layoutParams.width != lastAppliedW || layoutParams.height != lastAppliedH
+            ) {
+                try {
+                    windowManager.updateViewLayout(imageView, layoutParams)
+                } catch (t: Throwable) {
+                    Log.e("SHIMEJI", "updateViewLayout failed", t)
+                    break
+                }
+                lastAppliedX = x
+                lastAppliedY = y
+                lastAppliedW = layoutParams.width
+                lastAppliedH = layoutParams.height
             }
 
             // snapshot for service
